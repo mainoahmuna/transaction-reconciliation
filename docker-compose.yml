@@ -1,0 +1,23 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      - POSTGRES_DB=reconciler
+      - POSTGRES_USER=reconciler
+      - POSTGRES_PASSWORD=localdevpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  localstack:
+    image: localstack/localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3,sqs,sns,stepfunctions
+      - DEBUG=1
+      - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN}
+
+volumes:
+  pgdata:
