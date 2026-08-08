@@ -97,6 +97,12 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_BACKEND = 'django-db' # We might need django-celery-results
 
+# AWS / LocalStack
+AWS_ENDPOINT_URL = "http://localhost:4566"
+AWS_ACCESS_KEY_ID = "test"
+AWS_SECRET_ACCESS_KEY = "test"
+AWS_STORAGE_BUCKET_NAME = "reconciliation-uploads"
+
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators

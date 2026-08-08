@@ -1,0 +1,11 @@
+external_id,amount,date,description
+REF-1001,150.00,2026-01-05,Supplies - Groceries
+REF-1002,45.30,2026-01-06,Fuel
+REF-1003,1200.00,2026-01-07,Rent Expense
+REF-1004,89.50,2026-01-09,Office Supplies
+REF-1005,320.00,2026-01-10,Accounts Payable - Acme
+REF-1006,24.99,2026-01-12,Subscriptions
+REF-1007,200.00,2026-01-14,Utilities
+REF-1008,19.99,2026-01-15,Meals - Office
+REF-1011,412.50,2026-01-22,Client Refund
+REF-1012,55.00,2026-01-25,Bank Fees

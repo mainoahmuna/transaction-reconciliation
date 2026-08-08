@@ -1,0 +1,15 @@
+meta {
+  name: Upload CSV
+  type: http
+  seq: 1
+}
+
+post {
+  url: http://localhost:8000/api/upload/
+  body: multipartForm
+  auth: none
+}
+
+body:multipart-form {
+  file: @file(bank-jan2026.csv)
+}

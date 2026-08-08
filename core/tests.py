@@ -1,5 +1,7 @@
 from decimal import Decimal
+from unittest import mock
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -150,3 +152,25 @@ class MismatchAPITests(TestCase):
     def test_mismatches_are_read_only(self):
         response = self.client.post(self.url, {"reason": "amount mismatch"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+
+class UploadFileAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = "/api/upload/"
+
+    def test_upload_requires_file(self):
+        response = self.client.post(self.url, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @mock.patch("core.views.upload_file")
+    def test_upload_creates_reconciliation_run(self, mock_upload):
+        csv_file = SimpleUploadedFile("bank.csv", b"csv data", content_type="text/csv")
+        response = self.client.post(self.url, {"file": csv_file}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(mock_upload.called)
+        self.assertEqual(ReconciliationRun.objects.count(), 1)
+        run = ReconciliationRun.objects.get()
+        self.assertEqual(response.data["id"], run.id)
+        self.assertEqual(response.data["source_file_key"], run.source_file_key)
+        self.assertTrue(run.source_file_key.startswith("uploads/"))
