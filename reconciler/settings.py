@@ -37,6 +37,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'core',
 ]
 
 MIDDLEWARE = [
@@ -79,6 +81,21 @@ DATABASES = {
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
+
+# Celery Configuration
+CELERY_BROKER_URL = 'sqs://'
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    'region': 'us-east-1',
+    'predefined_queues': {
+        'celery': {
+            'url': 'http://localhost:4566/000000000000/celery'
+        }
+    },
+    'endpoint_url': 'http://localhost:4566'
+}
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_BACKEND = 'django-db' # We might need django-celery-results
 
 
 # Password validation

@@ -1,0 +1,21 @@
+meta {
+  name: Create Transaction
+  type: http
+  seq: 1
+}
+
+post {
+  url: http://localhost:8000/api/transactions/
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "source": "bank",
+    "external_id": "TXN1001",
+    "amount": "150.00",
+    "date": "2023-10-27",
+    "description": "Coffee Shop"
+  }
+}
