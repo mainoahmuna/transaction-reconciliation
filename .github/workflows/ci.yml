@@ -6,32 +6,89 @@ on:
   pull_request:
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Ruff lint
+        run: ruff check .
 
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Check dependencies for known vulnerabilities
+        run: pip-audit -r requirements.txt
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - name: Cache pip dependencies
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-
       - name: Install dependencies
         run: pip install -r requirements.txt
-
       - name: Django system check
         run: python manage.py check
-
       - name: Verify no missing migrations
         run: python manage.py makemigrations --check --dry-run
+      - name: Run tests with coverage
+        run: |
+          coverage run manage.py test core
+          coverage report --fail-under=80
 
-      - name: Run test suite
-        run: python manage.py test
+  test-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: reconciler
+          POSTGRES_USER: reconciler
+          POSTGRES_PASSWORD: localdevpassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U reconciler"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DB_ENGINE: django.db.backends.postgresql
+      DB_NAME: reconciler
+      DB_USER: reconciler
+      DB_PASSWORD: localdevpassword
+      DB_HOST: localhost
+      DB_PORT: "5432"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run tests against Postgres
+        run: python manage.py test core
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build server image
+        run: docker build -t reconciler .
