@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from .models import Transaction, ReconciliationRun, Mismatch
 from .serializers import TransactionSerializer, ReconciliationRunSerializer, MismatchSerializer
 from .s3 import upload_file
+from .sqs import enqueue_reconciliation
 
 class TransactionViewSet(viewsets.ModelViewSet):
     queryset = Transaction.objects.all()
@@ -33,6 +34,7 @@ def upload_file_view(request):
     upload_file(file_obj, key)
 
     run = ReconciliationRun.objects.create(source_file_key=key)
+    enqueue_reconciliation(run.id, run.source_file_key)
     return Response(
         ReconciliationRunSerializer(run).data,
         status=status.HTTP_201_CREATED,

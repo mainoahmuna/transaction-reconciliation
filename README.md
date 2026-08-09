@@ -20,8 +20,9 @@ docker compose up -d
 # 2. Verify LocalStack is healthy
 curl http://localhost:4566/_localstack/health   # s3, sqs, sns, stepfunctions: available
 
-# 3. Create the S3 bucket once
+# 3. Create the S3 bucket and SQS queue once
 awslocal s3 mb s3://reconciliation-uploads
+awslocal sqs create-queue --queue-name reconciliation-queue
 
 # 4. Set up the environment (Python 3.11+)
 python -m venv venv
@@ -31,13 +32,25 @@ pip install -r requirements.txt -r requirements-dev.txt
 # 5. Run Django
 python manage.py migrate
 python manage.py runserver
+
+# 6. In a second terminal, run the worker that consumes the queue
+python worker.py
 ```
+
+The upload endpoint no longer does work synchronously: it stores the file in S3,
+creates a `pending` `ReconciliationRun`, and pushes a message onto
+`reconciliation-queue`. The standalone `worker.py` polls that queue in the
+classic SQS loop (`receive_message` → process → `delete_message`) and moves the
+run through `processing` → `complete`. That is what a Lambda-triggered-by-SQS or
+an ECS worker would do in real AWS — the API responds instantly, and if the
+worker crashes, the message stays in the queue (invisible for the 30s
+visibility timeout) and gets retried.
 
 ## API
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| POST | `/api/upload/` | Upload a CSV (multipart field `file`) → stores in S3, creates a `ReconciliationRun` |
+| POST | `/api/upload/` | Upload a CSV (multipart field `file`) → stores in S3, creates a `pending` `ReconciliationRun`, and enqueues it on SQS (processed async by `worker.py`) |
 | GET/POST | `/api/transactions/` | Full CRUD for raw transactions |
 | GET | `/api/runs/` | Read-only view of reconciliation runs |
 | GET | `/api/mismatches/` | Read-only view of mismatches found |

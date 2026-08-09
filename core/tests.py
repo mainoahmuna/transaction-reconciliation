@@ -164,7 +164,8 @@ class UploadFileAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     @mock.patch("core.views.upload_file")
-    def test_upload_creates_reconciliation_run(self, mock_upload):
+    @mock.patch("core.views.enqueue_reconciliation")
+    def test_upload_creates_reconciliation_run(self, mock_enqueue, mock_upload):
         csv_file = SimpleUploadedFile("bank.csv", b"csv data", content_type="text/csv")
         response = self.client.post(self.url, {"file": csv_file}, format="multipart")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -174,3 +175,12 @@ class UploadFileAPITests(TestCase):
         self.assertEqual(response.data["id"], run.id)
         self.assertEqual(response.data["source_file_key"], run.source_file_key)
         self.assertTrue(run.source_file_key.startswith("uploads/"))
+
+    @mock.patch("core.views.upload_file")
+    @mock.patch("core.views.enqueue_reconciliation")
+    def test_upload_enqueues_sqs_message(self, mock_enqueue, mock_upload):
+        csv_file = SimpleUploadedFile("bank.csv", b"csv data", content_type="text/csv")
+        response = self.client.post(self.url, {"file": csv_file}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        run = ReconciliationRun.objects.get()
+        mock_enqueue.assert_called_once_with(run.id, run.source_file_key)

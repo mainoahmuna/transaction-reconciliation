@@ -108,7 +108,9 @@ CELERY_RESULT_BACKEND = 'django-db' # We might need django-celery-results
 AWS_ENDPOINT_URL = "http://localhost:4566"
 AWS_ACCESS_KEY_ID = "test"
 AWS_SECRET_ACCESS_KEY = "test"
+AWS_REGION = "us-east-1"
 AWS_STORAGE_BUCKET_NAME = "reconciliation-uploads"
+AWS_SQS_QUEUE_NAME = "reconciliation-queue"
 
 
 # Password validation
