@@ -20,3 +20,12 @@ def upload_file(file_obj, key):
         Body=file_obj.read(),
     )
     return key
+
+
+def download_file(key):
+    client = get_s3_client()
+    response = client.get_object(
+        Bucket=settings.AWS_STORAGE_BUCKET_NAME,
+        Key=key,
+    )
+    return response["Body"].read().decode("utf-8")

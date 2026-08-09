@@ -7,6 +7,13 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from .models import Mismatch, ReconciliationRun, Transaction
+from .reconcile import (
+    mismatch_summary,
+    parse_transactions_csv,
+    reconcile,
+    source_from_filename,
+)
+from worker import process_message
 
 
 class TransactionModelTests(TestCase):
@@ -184,3 +191,104 @@ class UploadFileAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         run = ReconciliationRun.objects.get()
         mock_enqueue.assert_called_once_with(run.id, run.source_file_key)
+
+
+class ReconcileLogicTests(TestCase):
+    def test_matching_transactions_produce_no_mismatch(self):
+        bank = [{"external_id": "REF-1", "amount": Decimal("10.00")}]
+        ledger = [{"external_id": "REF-1", "amount": Decimal("10.00")}]
+        self.assertEqual(reconcile(bank, ledger), [])
+
+    def test_missing_in_ledger_is_flagged(self):
+        bank = [{"external_id": "REF-1", "amount": Decimal("10.00")}]
+        self.assertEqual(reconcile(bank, []), [(bank[0], "missing in ledger")])
+
+    def test_amount_mismatch_is_flagged(self):
+        bank = [{"external_id": "REF-1", "amount": Decimal("10.00")}]
+        ledger = [{"external_id": "REF-1", "amount": Decimal("20.00")}]
+        self.assertEqual(reconcile(bank, ledger), [(bank[0], "amount mismatch")])
+
+    def test_trailing_zero_amounts_compare_equal(self):
+        bank = [{"external_id": "REF-1", "amount": Decimal("10.00")}]
+        ledger = [{"external_id": "REF-1", "amount": Decimal("10")}]
+        self.assertEqual(reconcile(bank, ledger), [])
+
+    def test_ledger_only_transactions_are_ignored(self):
+        bank = []
+        ledger = [{"external_id": "REF-9", "amount": Decimal("5.00")}]
+        self.assertEqual(reconcile(bank, ledger), [])
+
+    def test_reconcile_works_with_model_instances(self):
+        bank = Transaction.objects.create(
+            source="bank", external_id="REF-1", amount="10.00", date="2026-01-01"
+        )
+        ledger = Transaction.objects.create(
+            source="ledger", external_id="REF-1", amount="99.00", date="2026-01-01"
+        )
+        self.assertEqual(reconcile([bank], [ledger]), [(bank, "amount mismatch")])
+
+
+class ParseTransactionsCSVTests(TestCase):
+    def test_parses_rows_with_source(self):
+        csv_text = "external_id,amount,date,description\nREF-1,10.00,2026-01-05,Grocery\n"
+        rows = parse_transactions_csv(csv_text, "bank")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["source"], "bank")
+        self.assertEqual(rows[0]["external_id"], "REF-1")
+        self.assertEqual(rows[0]["amount"], Decimal("10.00"))
+        self.assertEqual(rows[0]["date"], "2026-01-05")
+
+    def test_source_from_filename(self):
+        self.assertEqual(source_from_filename("uploads/x/bank-jan2026.csv"), "bank")
+        self.assertEqual(source_from_filename("uploads/x/ledger-jan2026.csv"), "ledger")
+
+    def test_mismatch_summary_is_json_friendly(self):
+        bank = [{"external_id": "REF-1", "amount": Decimal("10.00")}]
+        summary = mismatch_summary(reconcile(bank, []))
+        self.assertEqual(
+            summary,
+            [{"external_id": "REF-1", "amount": "10.00", "reason": "missing in ledger"}],
+        )
+
+
+class WorkerProcessMessageTests(TestCase):
+    def test_process_message_reconciles_and_writes_rows(self):
+        run = ReconciliationRun.objects.create(source_file_key="uploads/x/bank.csv")
+        csv_text = "external_id,amount,date,description\nREF-1,10.00,2026-01-05,Grocery\n"
+        with mock.patch("worker.download_file", return_value=csv_text) as mock_download:
+            result = process_message({"run_id": run.id, "file_key": run.source_file_key})
+
+        mock_download.assert_called_once_with(run.source_file_key)
+        run.refresh_from_db()
+        self.assertEqual(run.status, "complete")
+        self.assertIsNotNone(run.completed_at)
+        self.assertEqual(result, {"parsed": 1, "mismatches": 1})
+        txn = Transaction.objects.get()
+        self.assertEqual(txn.source, "bank")
+        self.assertEqual(txn.amount, Decimal("10.00"))
+        self.assertEqual(Mismatch.objects.get().reason, "missing in ledger")
+
+    def test_process_message_marks_run_failed_on_error(self):
+        run = ReconciliationRun.objects.create(source_file_key="uploads/x/bank.csv")
+        with mock.patch("worker.download_file", side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                process_message({"run_id": run.id, "file_key": run.source_file_key})
+        run.refresh_from_db()
+        self.assertEqual(run.status, "failed")
+        self.assertIsNotNone(run.completed_at)
+
+    def test_bank_upload_reconciles_against_persisted_ledger(self):
+        ledger_run = ReconciliationRun.objects.create(source_file_key="uploads/x/ledger.csv")
+        ledger_csv = "external_id,amount,date\nREF-1,10.00,2026-01-05\n"
+        with mock.patch("worker.download_file", return_value=ledger_csv):
+            process_message({"run_id": ledger_run.id, "file_key": ledger_run.source_file_key})
+        self.assertEqual(Transaction.objects.filter(source="ledger").count(), 1)
+
+        bank_run = ReconciliationRun.objects.create(source_file_key="uploads/x/bank.csv")
+        bank_csv = "external_id,amount,date\nREF-1,9.00,2026-01-05\n"
+        with mock.patch("worker.download_file", return_value=bank_csv):
+            process_message({"run_id": bank_run.id, "file_key": bank_run.source_file_key})
+
+        self.assertEqual(Transaction.objects.filter(source="bank").count(), 1)
+        self.assertEqual(bank_run.mismatches.count(), 1)
+        self.assertEqual(bank_run.mismatches.get().reason, "amount mismatch")

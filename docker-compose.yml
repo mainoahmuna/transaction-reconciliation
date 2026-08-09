@@ -14,8 +14,10 @@ services:
     image: localstack/localstack
     ports:
       - "4566:4566"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
     environment:
-      - SERVICES=s3,sqs,sns,stepfunctions
+      - SERVICES=s3,sqs,sns,stepfunctions,lambda
       - DEBUG=1
       - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN}
 

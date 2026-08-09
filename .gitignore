@@ -27,6 +27,7 @@ media/
 # LocalStack / AWS local data
 .localstack/
 data/
+lambdas/.zips/
 
 # Editors / OS
 .DS_Store
